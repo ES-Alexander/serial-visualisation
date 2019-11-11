@@ -18,4 +18,4 @@ Each set of serial values should be separated by a newline character ('\n'), and
 7. wait for it to start displaying (takes a few seconds it seems)
 8. click the Data window and press 'q' or 'Q' or Escape to quit, or press 'p' (play/pause), 'c' (continue), or 's' (start/stop) to pause and/or resume the display (they're all the same, just pick your preferred key).
 
-I hope this works well for your project! If there are any problems, or suggestions for improvement, please submit an Issue on the github page (<https://github.com/ES-Alexander/serial-visualisation>)
+I hope this works well for your project! If there are any problems, or suggestions for improvement, please submit an Issue on the github page (<https://github.com/ES-Alexander/serial-visualisation/issues>).
