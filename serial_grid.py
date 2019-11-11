@@ -22,13 +22,18 @@
 #    (github.com/ES-Alexander)'                                               #
 #                                                                             #
 ###############################################################################
+#                                                                             #
+# Modified: 11/Nov/2019 (ES-Alexander)                                        #
+#   Added colour selection for min/max.                                       #
+#                                                                             #
+###############################################################################
 
 import io           # input/output, allows for reading lines
 import serial       # pyserial library (serial interfacing)
-from serial.tools.list_ports import main as list_ports
 import numpy as np  # numerical python, fast array-based processing
 import cv2          # opencv-python library
 import sys          # system library, for error printing
+from serial.tools.list_ports import main as list_ports
 
 class Grid(object):
     ''' A class for displaying serial data as a gridded image.
@@ -41,7 +46,13 @@ class Grid(object):
     '''
     EXIT_KEYS = [ord('q'), ord('Q'), 27] # q or escape
     PAUSE_KEYS = [ord('c'), ord('p'), ord('s')] # c, p, or s
-    def __init__(self, ser, rows, cols, min_val=0, max_val=500, clarity=10):
+    # mode options
+    COLOUR = 3
+    GREY = 1
+    DEFAULT = -1
+
+    def __init__(self, ser, rows, cols, min_val=0, max_val=500, clarity=10,
+                 min_colour=0., max_colour=1.):
         ''' Creates a serial-stream analyser which displays each line of tab-
             separated serial input as a grayscale image.
 
@@ -58,6 +69,11 @@ class Grid(object):
             clarity=1 results in quite a blurred image for small grids, whereas
             clarity=10 is quite clear. Additional clarity increases computation
             time.
+        'min_colour' is the colour displayed when a data-point is <= min_val.
+            It should be a float in the range [0.0, 1.0] or a Blue-Green-Red
+            tuple of three such floats (e.g. (0.0, 1.0, 1.0) for yellow).
+        'max_colour' is the colour displayed when a data-point is >= max_val.
+            It should be of the same type as min_colour.
 
         Constructor: Grid(serial.Serial, int, int, *int, *int, *int)
 
@@ -69,6 +85,15 @@ class Grid(object):
         self.cols = cols
         self.min_val = min_val
         self.max_val = max_val
+        self.mode = self.GREY if isinstance(min_colour, int) else self.COLOUR
+        if self.mode == self.GREY and min_colour == 0. and max_colour == 1.:
+            self.mode = self.DEFAULT
+        else:
+            self._map_scale = np.array(max_colour) - min_colour
+            self._map_offset = min_colour
+            if self.mode == self.COLOUR:
+                self._map = np.array([self._map_scale, self._map_offset]).T
+
         self.scale = (clarity * rows, clarity * cols)
 
         # read the first line to try to avoid meaningless reads on connection
@@ -82,9 +107,16 @@ class Grid(object):
 
         # display the grid as an image
         try:
-            # waits for 55ms to minorly slow down displaying -> reduces freezes
+            # check validity
+            if self.mode == self.COLOUR and len(min_colour) != 3:
+                raise Exception('Invalid colour mode, with length {}'\
+                                 .format(self.mode))
+            assert min_colour != max_colour, 'min_colour and max_colour '\
+                                             'cannot be the same.'
+            # main loop
             while "running":
-                key = cv2.waitKey(55)
+                # waits to minorly slow down displaying -> reduces freezes
+                key = cv2.waitKey(30)
                 if (key & 0xFF) in self.EXIT_KEYS:
                     print('User quit application')
                     break
@@ -128,15 +160,21 @@ class Grid(object):
         data = np.array(data)
         min_ = data.min()
         if min_ < self.min_val:
-            print('WARNING: datapoint {} is < min_val {}'\
+            print('WARNING: datapoint {} is < {} (min_val)'\
                   .format(min_, self.min_val), file=sys.stderr)
         max_ = data.max()
         if max_ > self.max_val:
-            print('WARNING: datapoint {} is > max_val {}'\
+            print('WARNING: datapoint {} is > {} (max_val)'\
                   .format(max_, self.max_val), file=sys.stderr)
         # scale the data and shape into a grid
         data = ((data - self.min_val) / self.max_val).reshape(
             self.rows, self.cols)
+        if self.mode == self.COLOUR:
+            data = cv2.merge([data * scale + offset for scale, offset in \
+                              self._map])
+        elif self.mode == self.GREY:
+            data = data * self._map_scale + self._map_offset
+
         # display the grid image, scaled for clarity
         cv2.imshow('Data', cv2.resize(data, self.scale,
                                       interpolation=cv2.INTER_NEAREST))
@@ -144,11 +182,12 @@ class Grid(object):
 
 if __name__ == '__main__':
     # allow input from file or via questionaire
+    sep = ';'
     filename = input('settings filename (press enter if none): ')
     if filename:
         with open(filename, 'r') as in_file:
-            port, baud, timeout, rows, cols, min_val, max_val, clarity = \
-                    in_file.readline().split(',')
+            port, baud, timeout, rows, cols, min_val, max_val, clarity, \
+                    min_colour, max_colour = in_file.readline().split(sep)
     else:
         list_ports()
         port = input('Port: ')
@@ -159,12 +198,14 @@ if __name__ == '__main__':
         min_val = input('Minimum expected value: ')
         max_val = input('Maximum expected value: ')
         clarity = input('Clarity (int >=1, 1->blurred, 10->quite clear): ')
+        min_colour = input('Colour of min (B,G,R)/float[0-1]: ')
+        max_colour = input('Colour of max (B,G,R)/float[0-1]: ')
         filename = input('Save settings to: ')
         if filename:
             try:
                 with open(filename, 'w') as out_file:
-                    out_file.write(','.join([port, baud, timeout, rows, cols,
-                                            min_val, max_val, clarity]))
+                    out_file.write(sep.join([port, baud, timeout, rows, cols,
+                            min_val, max_val, clarity, min_colour, max_colour]))
             except Exception as e:
                 print('failed to write to file {}, due to:'.format(filename),
                       file=sys.stderr)
@@ -186,6 +227,21 @@ if __name__ == '__main__':
     min_val = float(min_val)
     max_val = float(max_val)
     try:
+        min_colour = eval(min_colour)
+    except Exception:
+        print('invalid min_colour {}, setting to 0.0 (black)'\
+              .format(min_colour))
+    try:
+        max_colour = eval(max_colour)
+    except Exception:
+        print('invalid max colour {}, setting to '.format(max_colour), end='')
+        if isinstance(min_colour, float):
+            max_colour = 1.0
+        else:
+            max_colour = (1., 1., 1.)
+        print(str(max_colour) + ' (white)')
+
+    try:
         clarity = int(clarity)
     except Exception:
         print('invalid clarity value {}, setting to 10'.format(clarity))
@@ -194,5 +250,5 @@ if __name__ == '__main__':
     # connect to the serial port specified
     ser = serial.Serial(port, baud, timeout=timeout)
 
-    # initialise the grid
-    Grid(ser, rows, cols, min_val, max_val, clarity)
+    # initialise and hand over to the grid
+    Grid(ser, rows, cols, min_val, max_val, clarity, min_colour, max_colour)
