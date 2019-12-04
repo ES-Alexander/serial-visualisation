@@ -35,6 +35,7 @@ import cv2          # opencv-python library
 import sys          # system library, for error printing
 from serial.tools.list_ports import main as list_ports
 from threading import Thread, Lock
+EPS = sys.float_info.epsilon
 
 class Grid(object):
     ''' A class for displaying serial data as a gridded image.
@@ -170,11 +171,11 @@ class Grid(object):
             print('WARNING: datapoint {} is > {} (max_val)'\
                   .format(max_, self.max_val), file=sys.stderr)
         # scale the data and shape into a grid
-        data = ((data - self.min_val) / self.max_val).reshape(
-            self.rows, self.cols)
+        data = ((data - self.min_val) / (self.max_val - self.min_val + EPS))
+        data = self.apply_colour_map(data)#.reshape(self.rows, self.cols)
 
         # display the grid image, scaled for clarity
-        cv2.imshow('Data', cv2.resize(self.apply_colour_map(data), self.scale,
+        cv2.imshow('Data', cv2.resize(data, self.scale,
                                       interpolation=cv2.INTER_NEAREST))
 
     def apply_colour_map(self, data):
@@ -189,21 +190,30 @@ class Grid(object):
         else:
             channels = np.array([data])
 
+        last = len(self.intensities) - 1
         for c_ind, channel in enumerate(channels):
             for index, colour in enumerate(self.colours):
+                # scale each region as a linear colourmap between its bounds
+                new_intens = self.intensities[index] # current intensity value
                 if index == 0:
-                    channel[data < self.intensities[0]] = colour[c_ind]
+                    channel[data <= new_intens] = colour[c_ind]
                 else:
                     scale = colour[c_ind] - offset
-                    indices = data < self.intensities[index]
+                    if index < last:
+                        indices = (prev_intens < data) & (data <= new_intens)
+                    else:
+                        indices = (prev_intens < data)
+                    if not indices.any():
+                        continue
                     vals = data[indices]
                     min_val = vals.min()
                     channel[indices] = scale * (channel[indices] - vals.min())\
-                            / vals.max() + offset
+                            / (vals.max() - vals.min() + EPS) + offset
                 offset = colour[c_ind]
+                prev_intens = new_intens # update old intensity value
         if len(channels) == 1:
-            return channels[0]
-        return cv2.merge(channels)
+            return channels[0].reshape(self.rows, self.cols)
+        return cv2.merge(channels).reshape(self.rows, self.cols, 3)
 
 if __name__ == '__main__':
     # allow input from file or via questionaire
