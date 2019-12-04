@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: serial-visualisation
-Version: 1.0.0
+Version: 1.0.2
 Summary: A package for visualisation of serial data in a grid.
 Home-page: https://github.com/ES-Alexander/serial-visualisation
 Author: ES-Alexander
@@ -9,7 +9,7 @@ License: UNKNOWN
 Description: # serial-visualisation
         For simple visualisation of serial input (e.g. from an Arduino or similar device).
         _________________________________
-         Version: 1.0.0                  
+         Version: 1.0.2                  
          Author: ES Alexander            
          Release Date: 05/Dec/2019       
         _________________________________

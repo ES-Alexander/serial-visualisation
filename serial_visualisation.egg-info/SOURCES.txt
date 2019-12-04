@@ -1,5 +1,7 @@
 README.md
 setup.py
+serial_grid/__init__.py
+serial_grid/serial_grid.py
 serial_visualisation.egg-info/PKG-INFO
 serial_visualisation.egg-info/SOURCES.txt
 serial_visualisation.egg-info/dependency_links.txt

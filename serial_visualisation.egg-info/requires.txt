@@ -1,2 +1,3 @@
-numpyopencv-python
+numpy
+opencv-python
 pyserial
