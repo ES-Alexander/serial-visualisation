@@ -5,7 +5,7 @@ with open('README.md') as fh:
 
 setuptools.setup(
     name='serial-visualisation',
-    version='1.0.2',
+    version='1.0.3',
     author='ES-Alexander',
     author_email='sandman.esalexander@gmail.com',
     description='A package for visualisation of serial data in a grid.',
