@@ -1,0 +1,7 @@
+README.md
+setup.py
+serial_visualisation.egg-info/PKG-INFO
+serial_visualisation.egg-info/SOURCES.txt
+serial_visualisation.egg-info/dependency_links.txt
+serial_visualisation.egg-info/requires.txt
+serial_visualisation.egg-info/top_level.txt

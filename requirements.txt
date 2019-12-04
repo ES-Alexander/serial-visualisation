@@ -1,4 +1,0 @@
-# pip install requirements for package functionality
-numpy
-opencv-python
-pyserial

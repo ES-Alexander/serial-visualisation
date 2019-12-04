@@ -1,5 +1,10 @@
 # serial-visualisation
 For simple visualisation of serial input (e.g. from an Arduino or similar device).
+_________________________________
+ Version: 1.0.0                  
+ Author: ES Alexander            
+ Release Date: 05/Dec/2019       
+_________________________________
 
 ## You need to know:
 Allows the reading of serial input to a computer, and display of it in a grid as an image. 
@@ -7,11 +12,9 @@ Allows the reading of serial input to a computer, and display of it in a grid as
 Each set of serial values should be separated by a newline character ('\n'), and values within a set should be tab-separated ('\t').
 
 ### To run:
-1. download and install Python 3 if not already installed
-0. download `serial_grid.py`, or clone the repository to your local machine
-1. windows users: open command prompt (e.g. press windows key, type cmd, press enter), Mac users: open terminal
-2. type `pip install opencv-python pyserial` (only have to do this once at the start of your session, and probably only once per computer) - this step may cause issues if python and/or pip are not in your PATH. Google 'add pip to path' for a solution. Users with multiple Python installs may need to use pip3 instead of pip.
-3. navigate to where `serial_grid.py` is located (e.g. type 'cd ' and then paste in your filepath from the top of a file window, then press enter)
+1. download and install Python 3 if not already installed (select add to PATH)
+2. windows users: open command prompt (e.g. press windows key, type cmd, press enter), Mac users: open terminal
+3. type `pip install serial-visualisation` (only have to do this once at the start of your session, and probably only once per computer) - this step may cause issues if python and/or pip are not in your PATH. Google 'add pip to path' for a solution. Users with multiple Python installs may need to use pip3 instead of pip.
 4. make sure your Arduino software on the computer isn't using the serial port (only one program can access it at once, so program the Arduino normally, and then just don't open the serial plotter or monitor, and run this instead)
 5. run using `python serial_grid.py` (or `python3` on a Mac)
 6. answer the questions, and optionally save your settings
