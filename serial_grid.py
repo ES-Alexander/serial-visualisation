@@ -34,6 +34,7 @@ import numpy as np  # numerical python, fast array-based processing
 import cv2          # opencv-python library
 import sys          # system library, for error printing
 from serial.tools.list_ports import main as list_ports
+from threading import Thread, Lock
 
 class Grid(object):
     ''' A class for displaying serial data as a gridded image.
@@ -52,7 +53,7 @@ class Grid(object):
     DEFAULT = -1
 
     def __init__(self, ser, rows, cols, min_val=0, max_val=500, clarity=10,
-                 min_colour=0., max_colour=1.):
+                 colour_map=None):
         ''' Creates a serial-stream analyser which displays each line of tab-
             separated serial input as a grayscale image.
 
@@ -69,13 +70,14 @@ class Grid(object):
             clarity=1 results in quite a blurred image for small grids, whereas
             clarity=10 is quite clear. Additional clarity increases computation
             time.
-        'min_colour' is the colour displayed when a data-point is <= min_val.
-            It should be a float in the range [0.0, 1.0] or a Blue-Green-Red
-            tuple of three such floats (e.g. (0.0, 1.0, 1.0) for yellow).
-        'max_colour' is the colour displayed when a data-point is >= max_val.
-            It should be of the same type as min_colour.
+        'colour_map' is a list of (intensity, colour) pairs, where intensity is
+            a float in the range [0.0, 1.0], and colour is either a single
+            float in the same range for greyscale, or a Blue-Green-Red tuple
+            of three such floats (e.g. (0.0, 1.0, 1.0) for yellow). If a
+            colour map is specified, it must include at least two colours.
 
-        Constructor: Grid(serial.Serial, int, int, *int, *int, *int)
+        Constructor: Grid(serial.Serial, int, int, *int, *int, *int,
+                          *List[float, float/tuple(float(x3))])
 
         '''
         # wrap the serial interface in an IO buffer for easier access
@@ -85,15 +87,22 @@ class Grid(object):
         self.cols = cols
         self.min_val = min_val
         self.max_val = max_val
-        self.mode = self.GREY if isinstance(min_colour, int) else self.COLOUR
-        if self.mode == self.GREY and min_colour == 0. and max_colour == 1.:
-            self.mode = self.DEFAULT
-        else:
-            self._map_scale = np.array(max_colour) - min_colour
-            self._map_offset = min_colour
-            if self.mode == self.COLOUR:
-                self._map = np.array([self._map_scale, self._map_offset]).T
+        if colour_map:
+            self.intensities = []
+            self.colours = []
+            for intensity, colour in colour_map:
+                self.intensities.append(intensity)
 
+                self.colours.append(colour if hasattr(colour, '__len__') \
+                                    else [colour])
+            self.colours = np.array(self.colours, dtype=float)
+            if len(self.colours[0]) == 1:
+                self.mode = self.GREY
+            else:
+                self.mode = self.COLOUR
+        else:
+            self.mode = self.DEFAULT
+        #display = Thread(name='display', target=self._update_data, daemon=True)
         self.scale = (clarity * rows, clarity * cols)
 
         # read the first line to try to avoid meaningless reads on connection
@@ -107,12 +116,6 @@ class Grid(object):
 
         # display the grid as an image
         try:
-            # check validity
-            if self.mode == self.COLOUR and len(min_colour) != 3:
-                raise Exception('Invalid colour mode, with length {}'\
-                                 .format(self.mode))
-            assert min_colour != max_colour, 'min_colour and max_colour '\
-                                             'cannot be the same.'
             # main loop
             while "running":
                 # waits to minorly slow down displaying -> reduces freezes
@@ -169,16 +172,38 @@ class Grid(object):
         # scale the data and shape into a grid
         data = ((data - self.min_val) / self.max_val).reshape(
             self.rows, self.cols)
-        if self.mode == self.COLOUR:
-            data = cv2.merge([data * scale + offset for scale, offset in \
-                              self._map])
-        elif self.mode == self.GREY:
-            data = data * self._map_scale + self._map_offset
 
         # display the grid image, scaled for clarity
-        cv2.imshow('Data', cv2.resize(data, self.scale,
+        cv2.imshow('Data', cv2.resize(self.apply_colour_map(data), self.scale,
                                       interpolation=cv2.INTER_NEAREST))
 
+    def apply_colour_map(self, data):
+        ''' Applies the stored colour map to the data. '''
+        if self.mode == self.DEFAULT:
+            return data # already in desired form
+        if self.mode == self.COLOUR:
+            B = data.copy()
+            G = data.copy()
+            R = data.copy()
+            channels = [B,G,R]
+        else:
+            channels = np.array([data])
+
+        for c_ind, channel in enumerate(channels):
+            for index, colour in enumerate(self.colours):
+                if index == 0:
+                    channel[data < self.intensities[0]] = colour[c_ind]
+                else:
+                    scale = colour[c_ind] - offset
+                    indices = data < self.intensities[index]
+                    vals = data[indices]
+                    min_val = vals.min()
+                    channel[indices] = scale * (channel[indices] - vals.min())\
+                            / vals.max() + offset
+                offset = colour[c_ind]
+        if len(channels) == 1:
+            return channels[0]
+        return cv2.merge(channels)
 
 if __name__ == '__main__':
     # allow input from file or via questionaire
@@ -187,7 +212,7 @@ if __name__ == '__main__':
     if filename:
         with open(filename, 'r') as in_file:
             port, baud, timeout, rows, cols, min_val, max_val, clarity, \
-                    min_colour, max_colour = in_file.readline().split(sep)
+                    colour_map = in_file.readline().split(sep)
     else:
         list_ports()
         port = input('Port: ')
@@ -198,14 +223,15 @@ if __name__ == '__main__':
         min_val = input('Minimum expected value: ')
         max_val = input('Maximum expected value: ')
         clarity = input('Clarity (int >=1, 1->blurred, 10->quite clear): ')
-        min_colour = input('Colour of min (B,G,R)/float[0-1]: ')
-        max_colour = input('Colour of max (B,G,R)/float[0-1]: ')
+        colour_map = input('Colour map:\n\te.g. grey: [[0,0],[0.5,0.3],[1,1]]'\
+                           '\n\t\t coloured: [[0,[0,1,1]],[1,[0,0.1,1]]]\n\t'\
+                           '\t default linear greyscale intensity: <Enter>\n')
         filename = input('Save settings to: ')
         if filename:
             try:
                 with open(filename, 'w') as out_file:
                     out_file.write(sep.join([port, baud, timeout, rows, cols,
-                            min_val, max_val, clarity, min_colour, max_colour]))
+                            min_val, max_val, clarity, colour_map]))
             except Exception as e:
                 print('failed to write to file {}, due to:'.format(filename),
                       file=sys.stderr)
@@ -226,20 +252,6 @@ if __name__ == '__main__':
     cols = int(cols)
     min_val = float(min_val)
     max_val = float(max_val)
-    try:
-        min_colour = eval(min_colour)
-    except Exception:
-        print('invalid min_colour {}, setting to 0.0 (black)'\
-              .format(min_colour))
-    try:
-        max_colour = eval(max_colour)
-    except Exception:
-        print('invalid max colour {}, setting to '.format(max_colour), end='')
-        if isinstance(min_colour, float):
-            max_colour = 1.0
-        else:
-            max_colour = (1., 1., 1.)
-        print(str(max_colour) + ' (white)')
 
     try:
         clarity = int(clarity)
@@ -247,8 +259,18 @@ if __name__ == '__main__':
         print('invalid clarity value {}, setting to 10'.format(clarity))
         clarity = 10
 
+    if colour_map:
+        try:
+            colour_map = eval(colour_map)
+        except Exception:
+            print('invalid colour map \n{}\n setting to default linear'\
+                  'greyscale'.format(colour_map))
+            colour_map = None
+    else:
+        colour_map = None
+
     # connect to the serial port specified
     ser = serial.Serial(port, baud, timeout=timeout)
 
     # initialise and hand over to the grid
-    Grid(ser, rows, cols, min_val, max_val, clarity, min_colour, max_colour)
+    Grid(ser, rows, cols, min_val, max_val, clarity, colour_map)
