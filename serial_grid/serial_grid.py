@@ -123,7 +123,8 @@ class Grid(object):
                     break
                 elif (key & 0xFF) in self.PAUSE_KEYS:
                     print('User paused -- continue with c, p, or s')
-                    sleep(0.5)
+                    sleep(0.5) # wait for the key to be released
+                    key = cv2.waitKey(10)
                     while (key & 0xFF) not in self.PAUSE_KEYS:
                         # check for exit attempt
                         if (key & 0xFF) in self.EXIT_KEYS:
