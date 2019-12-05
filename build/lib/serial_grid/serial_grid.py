@@ -39,6 +39,7 @@ import serial       # pyserial library (serial interfacing)
 import numpy as np  # numerical python, fast array-based processing
 import cv2          # opencv-python library
 import sys          # system library, for error printing
+from time import sleep
 from serial.tools.list_ports import main as list_ports
 
 class Grid(object):
