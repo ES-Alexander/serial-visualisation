@@ -34,8 +34,6 @@ import numpy as np  # numerical python, fast array-based processing
 import cv2          # opencv-python library
 import sys          # system library, for error printing
 from serial.tools.list_ports import main as list_ports
-from threading import Thread, Lock
-EPS = sys.float_info.epsilon
 
 class Grid(object):
     ''' A class for displaying serial data as a gridded image.
@@ -81,9 +79,8 @@ class Grid(object):
                           *List[float, float/tuple(float(x3))])
 
         '''
-        # wrap the serial interface in an IO buffer for easier access
-        self.sio = io.TextIOWrapper(io.BufferedReader(ser))
         # store the set values
+        self.ser = ser
         self.rows = rows
         self.cols = cols
         self.min_val = min_val
@@ -103,14 +100,8 @@ class Grid(object):
                 self.mode = self.COLOUR
         else:
             self.mode = self.DEFAULT
-        #display = Thread(name='display', target=self._update_data, daemon=True)
-        self.scale = (clarity * rows, clarity * cols)
 
-        # read the first line to try to avoid meaningless reads on connection
-        try:
-            self.sio.readline()
-        except UnicodeDecodeError:
-            self.sio.readline()
+        self.scale = (clarity * rows, clarity * cols)
 
         # create a resizable window for displaying the grid
         cv2.namedWindow('Data', cv2.WINDOW_NORMAL)
@@ -120,7 +111,7 @@ class Grid(object):
             # main loop
             while "running":
                 # waits to minorly slow down displaying -> reduces freezes
-                key = cv2.waitKey(30)
+                key = cv2.waitKey(1)
                 if (key & 0xFF) in self.EXIT_KEYS:
                     print('User quit application')
                     break
@@ -151,17 +142,18 @@ class Grid(object):
 
     def plot_data(self):
         ''' Reads and displays the next serial line on the grid. '''
-        # remove external whitespace, split line into data readings
-        line_data = self.sio.readline().strip().split('\t')
-        data = []
-        for data_point in line_data:
-            try:
-                data.append(float(data_point))
-            except ValueError:
-                print('{} could not be converted to a float'\
-                      .format(data_point), file=sys.stderr)
-        # check the data for inconsistencies
-        data = np.array(data)
+        # clear the serial buffer and ignore the first partial line
+        self.ser.reset_input_buffer()
+        self.ser.readline()
+        # get the latest data
+        try:
+            data = self.ser.readline().strip().split(b'\t')
+            data = np.array(data, dtype=float)
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            print(data)
+            return
+
         min_ = data.min()
         if min_ < self.min_val:
             print('WARNING: datapoint {} is < {} (min_val)'\
@@ -171,7 +163,7 @@ class Grid(object):
             print('WARNING: datapoint {} is > {} (max_val)'\
                   .format(max_, self.max_val), file=sys.stderr)
         # scale the data and shape into a grid
-        data = ((data - self.min_val) / (self.max_val - self.min_val + EPS))
+        data = ((data - self.min_val) / (self.max_val - self.min_val))
         data = self.apply_colour_map(data)#.reshape(self.rows, self.cols)
 
         # display the grid image, scaled for clarity
@@ -207,8 +199,8 @@ class Grid(object):
                         continue
                     vals = data[indices]
                     min_val = vals.min()
-                    channel[indices] = scale * (channel[indices] - vals.min())\
-                            / (vals.max() - vals.min() + EPS) + offset
+                    channel[indices] = scale * (channel[indices] - prev_intens)\
+                            / (new_intens - prev_intens) + offset
                 offset = colour[c_ind]
                 prev_intens = new_intens # update old intensity value
         if len(channels) == 1:
@@ -281,6 +273,10 @@ if __name__ == '__main__':
 
     # connect to the serial port specified
     ser = serial.Serial(port, baud, timeout=timeout)
+    if not ser.isOpen():
+        print('Serial could not be opened, close any serial connections and '\
+              'try again')
+        exit()
 
     # initialise and hand over to the grid
     Grid(ser, rows, cols, min_val, max_val, clarity, colour_map)
