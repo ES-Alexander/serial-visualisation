@@ -122,6 +122,7 @@ class Grid(object):
                     break
                 elif (key & 0xFF) in self.PAUSE_KEYS:
                     print('User paused -- continue with c, p, or s')
+                    sleep(0.5)
                     while (key & 0xFF) not in self.PAUSE_KEYS:
                         # check for exit attempt
                         if (key & 0xFF) in self.EXIT_KEYS:
@@ -167,7 +168,7 @@ class Grid(object):
                   .format(max_, self.max_val), file=sys.stderr)
         # scale the data and shape into a grid
         data = ((data - self.min_val) / (self.max_val - self.min_val))
-        data = self.apply_colour_map(data)#.reshape(self.rows, self.cols)
+        data = self.apply_colour_map(data)
 
         # display the grid image, scaled for clarity
         cv2.imshow('Data', cv2.resize(data, self.scale,
