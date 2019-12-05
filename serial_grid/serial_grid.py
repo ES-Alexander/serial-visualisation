@@ -26,6 +26,12 @@
 # Modified: 11/Nov/2019 (ES-Alexander)                                        #
 #   Added colour selection for min/max.                                       #
 #                                                                             #
+# Modified: 04/Dec/2019 (ES-Alexander)                                        #
+#   Added general colour maps.                                                #
+#                                                                             #
+# Modified: 05/Dec/2019 (ES-Alexander)                                        #
+#   Fixed freezing bug and other issues.                                      #
+#                                                                             #
 ###############################################################################
 
 import io           # input/output, allows for reading lines
@@ -110,8 +116,7 @@ class Grid(object):
         try:
             # main loop
             while "running":
-                # waits to minorly slow down displaying -> reduces freezes
-                key = cv2.waitKey(1)
+                key = cv2.waitKey(1) # update image and display for >= 1ms
                 if (key & 0xFF) in self.EXIT_KEYS:
                     print('User quit application')
                     break
@@ -122,8 +127,6 @@ class Grid(object):
                         if (key & 0xFF) in self.EXIT_KEYS:
                             print('User quit application')
                             return
-                        # keep reading data so the buffer doesn't fill up
-                        self.sio.readline()
                         # wait for the next key press
                         key = cv2.waitKey(10)
                     print('Display resumed')
