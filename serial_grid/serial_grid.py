@@ -179,7 +179,7 @@ class Grid(object):
     def apply_colour_map(self, data):
         ''' Applies the stored colour map to the data. '''
         if self.mode == self.DEFAULT:
-            return data # already in desired form
+            return data.reshape(self.rows, self.cols) # already in desired form
         if self.mode == self.COLOUR:
             B = data.copy()
             G = data.copy()
