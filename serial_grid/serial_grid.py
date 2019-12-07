@@ -58,7 +58,7 @@ class Grid(object):
     GREY = 1
     DEFAULT = -1
 
-    def __init__(self, ser, rows, cols, min_val=0, max_val=500, clarity=10,
+    def __init__(self, ser, rows, cols, min_val=0, max_val=500, blur=0,
                  colour_map=None):
         ''' Creates a serial-stream analyser which displays each line of tab-
             separated serial input as a grayscale image.
@@ -71,11 +71,10 @@ class Grid(object):
             stream, and is used to set the 'black' level of the display image.
         'max_val' is the largest expected value to receive from the serial
             stream, and is used to set the 'white' level of the display image.
-        'clarity' is a resising parameter which helps avoid interpolation
-            between grid positions. Value should be greater than or equal to 1.
-            clarity=1 results in quite a blurred image for small grids, whereas
-            clarity=10 is quite clear. Additional clarity increases computation
-            time.
+        'blur' is a resizing interpolation parameter for optionally blurring
+            the result image. Value should be an integer >=0, where larger
+            values cause more blurring. Note that significant blurring may
+            increase computation time.
         'colour_map' is a list of (intensity, colour) pairs, where intensity is
             a float in the range [0.0, 1.0], and colour is either a single
             float in the same range for greyscale, or a Blue-Green-Red tuple
@@ -108,7 +107,12 @@ class Grid(object):
         else:
             self.mode = self.DEFAULT
 
-        self.scale = (clarity * rows, clarity * cols)
+        if blur == 0:
+            self.scale = (5 * cols, 5 * rows) # width, height scaling
+            self.resize_mode = cv2.INTER_NEAREST
+        else:
+            self.scale = (blur * cols, blur * rows)
+            self.resize_mode = cv2.INTER_LINEAR
 
         # create a resizable window for displaying the grid
         cv2.namedWindow('Data', cv2.WINDOW_NORMAL)
@@ -172,9 +176,9 @@ class Grid(object):
         data = ((data - self.min_val) / (self.max_val - self.min_val))
         data = self.apply_colour_map(data)
 
-        # display the grid image, scaled for clarity
+        # display the grid image, scaled for clarity/blurring
         cv2.imshow('Data', cv2.resize(data, self.scale,
-                                      interpolation=cv2.INTER_NEAREST))
+                                      interpolation=self.resize_mode))
 
     def apply_colour_map(self, data):
         ''' Applies the stored colour map to the data. '''
@@ -219,7 +223,7 @@ if __name__ == '__main__':
     filename = input('settings filename (press enter if none): ')
     if filename:
         with open(filename, 'r') as in_file:
-            port, baud, timeout, rows, cols, min_val, max_val, clarity, \
+            port, baud, timeout, rows, cols, min_val, max_val, blur, \
                     colour_map = in_file.readline().split(sep)
     else:
         list_ports()
@@ -230,7 +234,7 @@ if __name__ == '__main__':
         cols = input('Number of cols: ')
         min_val = input('Minimum expected value: ')
         max_val = input('Maximum expected value: ')
-        clarity = input('Clarity (int >=1, 1->blurred, 10->quite clear): ')
+        blur = input('Clarity (int >=1, 1->blurred, 10->quite clear): ')
         colour_map = input('Colour map:\n\te.g. grey: [[0,0],[0.5,0.3],[1,1]]'\
                            '\n\t\t coloured: [[0,[0,1,1]],[1,[0,0.1,1]]]\n\t'\
                            '\t default linear greyscale intensity: <Enter>\n')
@@ -239,7 +243,7 @@ if __name__ == '__main__':
             try:
                 with open(filename, 'w') as out_file:
                     out_file.write(sep.join([port, baud, timeout, rows, cols,
-                            min_val, max_val, clarity, colour_map]))
+                            min_val, max_val, blur, colour_map]))
             except Exception as e:
                 print('failed to write to file {}, due to:'.format(filename),
                       file=sys.stderr)
@@ -262,10 +266,10 @@ if __name__ == '__main__':
     max_val = float(max_val)
 
     try:
-        clarity = int(clarity)
+        blur = int(blur)
     except Exception:
-        print('invalid clarity value {}, setting to 10'.format(clarity))
-        clarity = 10
+        print('invalid blur value {}, setting to 0'.format(blur))
+        blur = 0
 
     if colour_map:
         try:
@@ -285,4 +289,4 @@ if __name__ == '__main__':
         exit()
 
     # initialise and hand over to the grid
-    Grid(ser, rows, cols, min_val, max_val, clarity, colour_map)
+    Grid(ser, rows, cols, min_val, max_val, blur, colour_map)
