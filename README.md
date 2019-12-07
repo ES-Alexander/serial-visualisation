@@ -1,7 +1,7 @@
 # serial-visualisation
 For simple visualisation of serial input (e.g. from an Arduino or similar device).
 _________________________________
- Version: 1.0.9                  
+ Version: 1.1.0                  
  Author: ES Alexander            
  Release Date: 07/Dec/2019       
 _________________________________

@@ -234,7 +234,7 @@ if __name__ == '__main__':
         cols = input('Number of cols: ')
         min_val = input('Minimum expected value: ')
         max_val = input('Maximum expected value: ')
-        blur = input('Clarity (int >=1, 1->blurred, 10->quite clear): ')
+        blur = input('Blur (int >=0, larger values blur more: ')
         colour_map = input('Colour map:\n\te.g. grey: [[0,0],[0.5,0.3],[1,1]]'\
                            '\n\t\t coloured: [[0,[0,1,1]],[1,[0,0.1,1]]]\n\t'\
                            '\t default linear greyscale intensity: <Enter>\n')
