@@ -32,6 +32,12 @@
 # Modified: 05/Dec/2019 (ES-Alexander)                                        #
 #   Fixed freezing bug and other issues.                                      #
 #                                                                             #
+# Modified: 07/Dec/2019 (ES-Alexander)                                        #
+#   Replaced 'clarity' with 'blur', fixed reshaping bug.                      #
+#                                                                             #
+# Modified: 10/Dec/2019 (ES-Alexander)                                        #
+#   Threading speed-up of serial reading                                      #
+#                                                                             #
 ###############################################################################
 
 import io           # input/output, allows for reading lines
@@ -39,6 +45,7 @@ import serial       # pyserial library (serial interfacing)
 import numpy as np  # numerical python, fast array-based processing
 import cv2          # opencv-python library
 import sys          # system library, for error printing
+from threading import Thread, Lock, Condition # allow multi-threading for efficiency
 from time import sleep
 from serial.tools.list_ports import main as list_ports
 
@@ -59,7 +66,7 @@ class Grid(object):
     DEFAULT = -1
 
     def __init__(self, ser, rows, cols, min_val=0, max_val=500, blur=0,
-                 colour_map=None):
+                 colour_map=None, video_file=None, fps=20):
         ''' Creates a serial-stream analyser which displays each line of tab-
             separated serial input as a grayscale image.
 
@@ -80,9 +87,11 @@ class Grid(object):
             float in the same range for greyscale, or a Blue-Green-Red tuple
             of three such floats (e.g. (0.0, 1.0, 1.0) for yellow). If a
             colour map is specified, it must include at least two colours.
+        'video_writer' is a cv2.VideoWriter object used for saving a video of
+            the grid over time.
 
         Constructor: Grid(serial.Serial, int, int, *int, *int, *int,
-                          *List[float, float/tuple(float(x3))])
+                          *List[float, float/tuple(float(x3))], cv2.VidWriter)
 
         '''
         # store the set values
@@ -113,6 +122,35 @@ class Grid(object):
         else:
             self.scale = (blur * cols, blur * rows)
             self.resize_mode = cv2.INTER_LINEAR
+
+        if video_file is None:
+            self._recording = False
+        else:
+            self._recording = True
+            # set codec TODO: FIND WORKING CODEC COMBINATION
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            video_file += '.avi'
+            #if video_file.endswith('.mp4'):
+            #    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            #else:
+            #    if not video_file.endswith('.avi'):
+            #        filename, extension = video_file.split('.')
+            #        video_file = filename + '.avi'
+            #        print('Extension {} not supported, saving as .avi'\
+            #              .format(extension))
+            #    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            self._video_writer = cv2.VideoWriter()
+            self._video_writer.open(video_file, fourcc, fps, self.scale, True)
+
+            self._write_var_control = Condition()
+            Thread(name='write_data', target=self._write_to_file,
+                   daemon=True).start()
+
+        self._serial_var_lock = Lock()
+        self._serial_var_control = Condition(lock=self._serial_var_lock)
+        self._clear_serial() # clear before first proper read
+        Thread(name='update_data', target=self._update_data,
+               daemon=True).start()
 
         # create a resizable window for displaying the grid
         cv2.namedWindow('Data', cv2.WINDOW_NORMAL)
@@ -148,21 +186,48 @@ class Grid(object):
         finally:
             ser.close() # close the serial port to allow others to access
             print('Serial port closed')
+            if self._recording:
+                self._video_writer.release()
             cv2.destroyAllWindows() # close the grid display
+
+    def _clear_serial(self):
+        ''' Clears the serial buffer to the start of the next new line. '''
+        self.ser.reset_input_buffer()
+        self.ser.readline()
+
+    def _update_data(self):
+        ''' Thread for getting serial data on demand. '''
+        while 'data available':
+            try:
+                # if serial coming in too fast to display
+                if self._serial_var_lock.locked():
+                    # skip the data that came in while processing
+                    self._clear_serial()
+                data = self.ser.readline().strip().split(b'\t')
+                with self._serial_var_control:
+                    self._data = data
+                    self._serial_var_control.notify()
+            except Exception as e:
+                print('Serial failed, normal on closure:\n\t', e)
+                break
+
+    def _write_to_file(self):
+        ''' Thread for writing displayed images to file. '''
+        with self._write_var_control:
+            self._write_var_control.wait()
+            self._video_writer.write(self._file_data)
 
     def plot_data(self):
         ''' Reads and displays the next serial line on the grid. '''
-        # clear the serial buffer and ignore the first partial line
-        self.ser.reset_input_buffer()
-        self.ser.readline()
-        # get the latest data
-        try:
-            data = self.ser.readline().strip().split(b'\t')
-            data = np.array(data, dtype=float)
-        except ValueError as e:
-            print(e, file=sys.stderr)
-            print(data)
-            return
+        with self._serial_var_control:
+            self._serial_var_control.wait()
+            # get the latest data
+            try:
+                data = np.array(self._data, dtype=float)
+            except ValueError as e:
+                print(e, file=sys.stderr)
+                print(data)
+                return
 
         min_ = data.min()
         if min_ < self.min_val:
@@ -175,6 +240,11 @@ class Grid(object):
         # scale the data and shape into a grid
         data = ((data - self.min_val) / (self.max_val - self.min_val))
         data = self.apply_colour_map(data)
+
+        if self._recording:
+            with self._write_var_control:
+                self._file_data = np.uint8(data * 255)
+                self._write_var_control.notify()
 
         # display the grid image, scaled for clarity/blurring
         cv2.imshow('Data', cv2.resize(data, self.scale,
@@ -238,6 +308,7 @@ if __name__ == '__main__':
         colour_map = input('Colour map:\n\te.g. grey: [[0,0],[0.5,0.3],[1,1]]'\
                            '\n\t\t coloured: [[0,[0,1,1]],[1,[0,0.1,1]]]\n\t'\
                            '\t default linear greyscale intensity: <Enter>\n')
+
         filename = input('Save settings to: ')
         if filename:
             try:
@@ -281,6 +352,18 @@ if __name__ == '__main__':
     else:
         colour_map = None
 
+    video_file = None
+    fps = 20
+    # TODO re-add once working CODEC found
+    '''
+    if input('Save constant frame-rate video of result [Y/N]? ').lower() == 'y':
+        video_file = input('Video Filename [no extension]: ')
+        try:
+            fps = int(input('Framerate (FPS) (e.g. 30): '))
+        except Exception as e:
+            print(e, 'Setting FPS to default 20')
+    '''
+
     # connect to the serial port specified
     ser = serial.Serial(port, baud, timeout=timeout)
     if not ser.isOpen():
@@ -289,4 +372,4 @@ if __name__ == '__main__':
         exit()
 
     # initialise and hand over to the grid
-    Grid(ser, rows, cols, min_val, max_val, blur, colour_map)
+    Grid(ser, rows, cols, min_val, max_val, blur, colour_map, video_file, fps)
