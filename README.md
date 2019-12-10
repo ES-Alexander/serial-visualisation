@@ -7,7 +7,7 @@ _________________________________
 _________________________________
 
 ## You need to know:
-Allows the reading of serial input to a computer, and display of it in a grid as an image. 
+Allows the reading of serial input to a computer, and display of it in a grid as an image. The displayed grid can be optionally blurred for sub-pixel resolution, and can also be formatted with a fully-customisable RGB or greyscale colourmap.
 
 Each set of serial values should be separated by a newline character ('\n'), and values within a set should be tab-separated ('\t').
 
