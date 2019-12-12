@@ -38,6 +38,10 @@
 # Modified: 10/Dec/2019 (ES-Alexander)                                        #
 #   Threading speed-up of serial reading                                      #
 #                                                                             #
+# Modified: 12/Dec/2019 (ES-Alexander)                                        #
+#   Video writing for constant framerate .avi, hopefully cross-platform - may #
+#   require a media player such as VLC (open-source freeware) to view result. #
+#                                                                             #
 ###############################################################################
 
 import io           # input/output, allows for reading lines
@@ -46,7 +50,7 @@ import numpy as np  # numerical python, fast array-based processing
 import cv2          # opencv-python library
 import sys          # system library, for error printing
 from threading import Thread, Lock, Condition # allow multi-threading for efficiency
-from time import sleep
+from time import sleep, time
 from serial.tools.list_ports import main as list_ports
 
 class Grid(object):
@@ -64,6 +68,10 @@ class Grid(object):
     COLOUR = 3
     GREY = 1
     DEFAULT = -1
+    # instructions
+    INSTRUCTIONS = '\n' + '-' * 70 + "\n\nPress 'q', or <Escape> to quit.\n"\
+                   "Press 'p', 'c', or 's' to play/pause (start/stop, "\
+                   "continue).\n\n" + '-' * 70 + '\n'
 
     def __init__(self, ser, rows, cols, min_val=0, max_val=500, blur=0,
                  colour_map=None, video_file=None, fps=20):
@@ -94,6 +102,7 @@ class Grid(object):
                           *List[float, float/tuple(float(x3))], cv2.VidWriter)
 
         '''
+        print(self.INSTRUCTIONS)
         # store the set values
         self.ser = ser
         self.rows = rows
@@ -125,26 +134,20 @@ class Grid(object):
 
         if video_file is None:
             self._recording = False
+            delay = 1
         else:
             self._recording = True
-            # set codec TODO: FIND WORKING CODEC COMBINATION
-            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            fourcc = cv2.VideoWriter_fourcc(*'DIVX')
             video_file += '.avi'
-            #if video_file.endswith('.mp4'):
-            #    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            #else:
-            #    if not video_file.endswith('.avi'):
-            #        filename, extension = video_file.split('.')
-            #        video_file = filename + '.avi'
-            #        print('Extension {} not supported, saving as .avi'\
-            #              .format(extension))
-            #    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-            self._video_writer = cv2.VideoWriter()
-            self._video_writer.open(video_file, fourcc, fps, self.scale, True)
-
+            self._video_writer = cv2.VideoWriter(video_file, fourcc, fps,
+                    self.scale, self.mode == self.COLOUR)
+            # thread and synchronisation
             self._write_var_control = Condition()
             Thread(name='write_data', target=self._write_to_file,
                    daemon=True).start()
+            # timing
+            desired = delay = int(np.round(1000/(fps+1)))
+            count = 0
 
         self._serial_var_lock = Lock()
         self._serial_var_control = Condition(lock=self._serial_var_lock)
@@ -155,11 +158,14 @@ class Grid(object):
         # create a resizable window for displaying the grid
         cv2.namedWindow('Data', cv2.WINDOW_NORMAL)
 
+        if self._recording:
+            static_start = start = time()
+
         # display the grid as an image
         try:
             # main loop
             while "running":
-                key = cv2.waitKey(1) # update image and display for >= 1ms
+                key = cv2.waitKey(delay) # update image and display for >= 1ms
                 if (key & 0xFF) in self.EXIT_KEYS:
                     print('User quit application')
                     break
@@ -181,13 +187,28 @@ class Grid(object):
                     # read issue, occasionally occurs from unreliable serial
                     print(e, file=sys.stderr)
                     continue
+                if self._recording:
+                    # adjust delay to match desired framerate
+                    end = time() # measure end of current interval
+                    delay = max(delay + desired - int(1000 * (end - start)), 1)
+                    start = end  # start new interval
+                    count += 1   # increment frame count
         except Exception as e:
             raise e # unexpected Exception occurred
         finally:
+            if self._recording:
+                head = '\n' + '-' * 70
+                print(head + '\n\nFramerate Average: {:.2f}fps'\
+                      .format(count / (time() - static_start)))
+                if delay == 1:
+                    print('May be at max framerate for given serial speed, '\
+                          'blurring, and grid size.\nGreyscale, a simpler '\
+                          'colour-map, or blurring=1 may be faster if '\
+                          'required.')
+                print(head, end='\n'*2)
+                self._video_writer.release()
             ser.close() # close the serial port to allow others to access
             print('Serial port closed')
-            if self._recording:
-                self._video_writer.release()
             cv2.destroyAllWindows() # close the grid display
 
     def _clear_serial(self):
@@ -213,9 +234,10 @@ class Grid(object):
 
     def _write_to_file(self):
         ''' Thread for writing displayed images to file. '''
-        with self._write_var_control:
-            self._write_var_control.wait()
-            self._video_writer.write(self._file_data)
+        while 'video incomplete':
+            with self._write_var_control:
+                self._write_var_control.wait()
+                self._video_writer.write(self._file_data)
 
     def plot_data(self):
         ''' Reads and displays the next serial line on the grid. '''
@@ -239,7 +261,8 @@ class Grid(object):
                   .format(max_, self.max_val), file=sys.stderr)
         # scale the data and shape into a grid
         data = ((data - self.min_val) / (self.max_val - self.min_val))
-        data = self.apply_colour_map(data)
+        data = cv2.resize(self.apply_colour_map(data), self.scale,
+                          interpolation=self.resize_mode)
 
         if self._recording:
             with self._write_var_control:
@@ -247,8 +270,7 @@ class Grid(object):
                 self._write_var_control.notify()
 
         # display the grid image, scaled for clarity/blurring
-        cv2.imshow('Data', cv2.resize(data, self.scale,
-                                      interpolation=self.resize_mode))
+        cv2.imshow('Data', data)
 
     def apply_colour_map(self, data):
         ''' Applies the stored colour map to the data. '''
@@ -353,16 +375,16 @@ if __name__ == '__main__':
         colour_map = None
 
     video_file = None
-    fps = 20
-    # TODO re-add once working CODEC found
-    '''
+    fps = 20.0
     if input('Save constant frame-rate video of result [Y/N]? ').lower() == 'y':
+        segment = '#'*4
+        print('\n' + segment + ' NOTE: may require media player such as VLC '\
+              'to view ' + segment + '\n')
         video_file = input('Video Filename [no extension]: ')
         try:
-            fps = int(input('Framerate (FPS) (e.g. 30): '))
+            fps = float(input('Framerate (FPS) (e.g. 20.0): '))
         except Exception as e:
-            print(e, 'Setting FPS to default 20')
-    '''
+            print(e, 'Setting FPS to default 20.0')
 
     # connect to the serial port specified
     ser = serial.Serial(port, baud, timeout=timeout)

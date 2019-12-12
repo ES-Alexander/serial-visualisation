@@ -1,13 +1,13 @@
 # serial-visualisation
 For simple visualisation of serial input (e.g. from an Arduino or similar device).
 _________________________________
- Version: 1.1.1                  
+ Version: 1.2.0                  
  Author: ES Alexander            
- Release Date: 10/Dec/2019       
+ Release Date: 12/Dec/2019       
 _________________________________
 
 ## You need to know:
-Allows the reading of serial input to a computer, and display of it in a grid as an image. The displayed grid can be optionally blurred for sub-pixel resolution, and can also be formatted with a fully-customisable RGB or greyscale colourmap.
+Allows the reading of serial input to a computer, and display of it in a grid as an image. The displayed grid can be optionally blurred for sub-pixel resolution, and can also be formatted with a fully-customisable RGB or greyscale colourmap. The displayed grid can be saved to a constant-framerate video.
 
 Each set of serial values should be separated by a newline character ('\n'), and values within a set should be tab-separated ('\t').
 

@@ -1,3 +1,5 @@
 # don't track
 settings*.txt
+*.avi
+*test*
 *__pycache__*
